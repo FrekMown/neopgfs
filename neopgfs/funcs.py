@@ -1,6 +1,6 @@
 import numpy as np
-from .rl_glue import RLGlue
-import tqdm
+from rl_glue import RLGlue
+from tqdm import tqdm
 import os
 import shutil
 

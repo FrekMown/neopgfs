@@ -1,10 +1,10 @@
 import numpy as np
 from copy import deepcopy
-from .rl_glue import BaseAgent
-from .replay_buffer import ReplayBuffer
-from .network import ActionValueNetwork
-from .adam import Adam
-from .funcs import softmax, optimize_network
+from rl_glue import BaseAgent
+from replay_buffer import ReplayBuffer
+from network import ActionValueNetwork
+from adam import Adam
+from funcs import softmax, optimize_network
 
 
 class Agent(BaseAgent):

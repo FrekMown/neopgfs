@@ -4,6 +4,7 @@
 """
 
 from abc import ABCMeta, abstractmethod
+from typing import Type
 
 
 class BaseAgent:
@@ -135,7 +136,7 @@ class RLGlue:
         agent_name (string): the name of the module where the Agent class can be found
     """
 
-    def __init__(self, env_class: BaseAgent, agent_class: BaseEnvironment):
+    def __init__(self, env_class: Type[BaseAgent], agent_class: Type[BaseEnvironment]):
         self.environment = env_class()
         self.agent = agent_class()
 
