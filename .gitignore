@@ -1,0 +1,6 @@
+.vscode
+.ipynb_checkpoints
+__pycache__
+.DS_Store
+Apollo1060
+LunarLander
