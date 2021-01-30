@@ -46,11 +46,11 @@ if __name__ == "__main__":
 
     predictions_list = []
 
-    ccr5_pipe = ClassicPipe.load("neopgfs/Models/hiv_ccr5")
-    int_pipe = ClassicPipe.load("neopgfs/Models/hiv_int")
-    rt_pipe = ClassicPipe.load("neopgfs/Models/hiv_rt")
+    ccr5_pipe = ClassicPipe.load("neopgfs/models/hiv_ccr5")
+    int_pipe = ClassicPipe.load("neopgfs/models/hiv_int")
+    rt_pipe = ClassicPipe.load("neopgfs/models/hiv_rt")
 
-    with open("neopgfs/Data/ChEMBL_500_sample.txt", "r") as inp:
+    with open("neopgfs/data/ChEMBL_500_sample.txt", "r") as inp:
         smiles_list = inp.readlines()
 
     for sml_str in tqdm(smiles_list):
@@ -58,6 +58,7 @@ if __name__ == "__main__":
         smol = SMol(smiles)  # standardization
         smol.featurize(
             ccr5_pipe.features
+            # [{"type": "ECFP"}]
         )  # same intital features set before per-model selection
         predicted_ccr5_pic_50 = ccr5_pipe.predict_vector(smol.features_values)
         predicted_int_pic_50 = int_pipe.predict_vector(smol.features_values)
