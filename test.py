@@ -1,6 +1,6 @@
-from agent import Agent
-from environment import LunarLanderEnvironment
-from funcs import run_experiment
+from neopgfs.agent import Agent
+from neopgfs.environment_lander import LunarLanderEnvironment
+from neopgfs.funcs import run_experiment
 
 # Run Experiment
 

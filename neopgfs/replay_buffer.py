@@ -1,41 +1,58 @@
 import numpy as np
 
 
-class ReplayBuffer:
-    def __init__(self, size, minibatch_size, seed):
+# Code based on:
+# https://github.com/openai/baselines/blob/master/baselines/deepq/replay_buffer.py
+
+# Expects tuples of (state, next_state, action, reward, done)
+class ReplayBuffer(object):
+    """Buffer to store tuples of experience replay"""
+
+    def __init__(self, max_size=1000000):
         """
         Args:
-            size (integer): The size of the replay buffer.
-            minibatch_size (integer): The sample size.
-            seed (integer): The seed for the random number generator.
+            max_size (int): total amount of tuples to store
         """
-        self.buffer = []
-        self.minibatch_size = minibatch_size
-        self.rand_generator = np.random.RandomState(seed)
-        self.max_size = size
 
-    def append(self, state, action, reward, terminal, next_state):
-        """
+        self.storage = []
+        self.max_size = max_size
+        self.ptr = 0
+
+    def add(self, data):
+        """Add experience tuples to buffer
+
         Args:
-            state (Numpy array): The state.
-            action (integer): The action.
-            reward (float): The reward.
-            terminal (integer): 1 if the next state is a terminal state and 0 otherwise.
-            next_state (Numpy array): The next state.
+            data (tuple): experience replay tuple
         """
-        if len(self.buffer) == self.max_size:
-            del self.buffer[0]
-        self.buffer.append([state, action, reward, terminal, next_state])
 
-    def sample(self):
+        if len(self.storage) == self.max_size:
+            self.storage[int(self.ptr)] = data
+            self.ptr = (self.ptr + 1) % self.max_size
+        else:
+            self.storage.append(data)
+
+    def sample(self, batch_size):
+        """Samples a random amount of experiences from buffer of batch size
+
+        Args:
+            batch_size (int): size of sample
         """
-        Returns:
-            A list of transition tuples including state, action, reward, terinal, and next_state
-        """
-        idxs = self.rand_generator.choice(
-            np.arange(len(self.buffer)), size=self.minibatch_size
+
+        ind = np.random.randint(0, len(self.storage), size=batch_size)
+        states, actions, next_states, rewards, dones = [], [], [], [], []
+
+        for i in ind:
+            s, a, s_, r, d = self.storage[i]
+            states.append(np.array(s, copy=False))
+            actions.append(np.array(a, copy=False))
+            next_states.append(np.array(s_, copy=False))
+            rewards.append(np.array(r, copy=False))
+            dones.append(np.array(d, copy=False))
+
+        return (
+            np.array(states),
+            np.array(actions),
+            np.array(next_states),
+            np.array(rewards).reshape(-1, 1),
+            np.array(dones).reshape(-1, 1),
         )
-        return [self.buffer[idx] for idx in idxs]
-
-    def size(self):
-        return len(self.buffer)
