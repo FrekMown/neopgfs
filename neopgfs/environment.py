@@ -20,6 +20,11 @@ class Environment:
         self.description = "Chemical Environment for neoPGFS"
 
     def reset(self) -> str:
+        """Resets environment and returns a starting state
+
+        Returns:
+            str: SMILES of the starting molecule
+        """
         self.current_state = self.chemonster.get_random_initial_molecule()
         self.n_steps = 0
         self.terminal = False
@@ -52,4 +57,3 @@ class Environment:
         terminal = too_many_steps or no_more_reactions
 
         return self.current_state, reward, terminal, t_mask
-

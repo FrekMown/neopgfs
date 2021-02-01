@@ -80,9 +80,10 @@ class Chemonster:
         for rxn_smarts in self.reactions.copy():
             rxn = AllChem.ReactionFromSmarts(rxn_smarts)
             if rxn.GetNumReactantTemplates() == 2:
+
                 rxn_inv_smarts = AllChem.ReactionToSmarts(inverse_reaction(rxn))
                 self.reactions = np.append(self.reactions, [rxn_inv_smarts])
-        print(f"new reactions.shape={self.reactions.shape}")
+        # print(f"new reactions.shape={self.reactions.shape}")
 
         # Arrays holding reactants available for each reaction
         # Created with script "rel_reactant_reactions.py"
@@ -96,6 +97,27 @@ class Chemonster:
         assert (
             self.rel_r1_rxns.shape == exp_shape_rels
         ), f"Expected dimension for rel_r1_rxns is {exp_shape_rels}, got {self.rel_r1_rxns.shape}"
+
+        # Identify bimolecular reactions with less than 50 second reactants
+        nb_r1_per_rxn = self.rel_r1_rxns.sum(axis=0)
+        reactions_less_50 = np.where(nb_r1_per_rxn < 50)[0]
+        unimolecular = []  # unimolecular reactions excluded
+        for arr_idx, rxn_idx in enumerate(reactions_less_50):
+            rxn = self.get_reaction(rxn_idx)
+            if rxn.GetNumReactantTemplates() == 1:
+                unimolecular.append(arr_idx)
+
+        # print(reactions_less_50)
+        # print(unimolecular)
+        reactions_less_50 = np.delete(reactions_less_50, unimolecular, 0)
+
+        # Clear these reactions from arrays
+        self.reactions = np.delete(self.reactions, reactions_less_50, 0)
+        self.rel_r0_rxns = np.delete(self.rel_r0_rxns, reactions_less_50, 1)
+        self.rel_r1_rxns = np.delete(self.rel_r1_rxns, reactions_less_50, 1)
+        print(
+            f"Final number of reactions={len(self.reactions)}, shape of relations={self.rel_r0_rxns.shape} / {self.rel_r1_rxns.shape}"
+        )
 
         # Initialize KNN classifiers, indexed by reaction idx
         t0 = time()
