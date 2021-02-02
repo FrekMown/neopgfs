@@ -198,3 +198,10 @@ if __name__ == "__main__":
     timesteps_since_eval = 0
     episode_num = 0
     done = True
+
+    # Populate replay buffer
+    observe(env, replay_buffer, OBSERVATION)
+
+    # Train agent
+    train(policy, env)
+

@@ -1,16 +1,19 @@
 import numpy as np
+from .environment import Environment
+from .agent import Agent
+from .replay_buffer import ReplayBuffer
 
 
 class Runner:
     """Carries out the environment steps and adds experiences to memory"""
 
-    def __init__(self, env, agent, replay_buffer):
+    def __init__(self, env: Environment, agent: Agent, replay_buffer: ReplayBuffer):
 
         self.env = env
         self.agent = agent
         self.replay_buffer = replay_buffer
         self.obs = env.reset()
-        self.done = False
+        self.done: bool = False
 
     def next_step(self, episode_timesteps, replay_buffer, noise=0.1):
 
