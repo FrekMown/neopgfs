@@ -11,6 +11,8 @@ class Environment:
     current_state: str
     terminal: bool
     n_steps: int
+    action_space: dict
+    observation_space: dict
 
     def __init__(
         self, chemonster: Chemonster, max_steps: int = 10,
@@ -19,20 +21,30 @@ class Environment:
         self.max_steps = max_steps
         self.description = "Chemical Environment for neoPGFS"
 
-    def reset(self) -> str:
+        # Define observation space
+        self.observation_space = {
+            "shape": 1024,
+        }
+
+        # Define action space
+        self.action_space = {
+            "shape": 35,
+        }
+
+    def reset(self) -> np.ndarray:
         """Resets environment and returns a starting state
 
         Returns:
-            str: SMILES of the starting molecule
+            np.ndarray: vector representation of current state (molecule)
         """
         self.current_state = self.chemonster.get_random_initial_molecule()
         self.n_steps = 0
         self.terminal = False
-        return self.current_state
+        return self.chemonster.vectorize_smiles(self.current_state, "efcp")
 
     def step(
         self, action_T: int, action_R: Optional[np.ndarray] = None
-    ) -> Tuple[str, float, bool, np.ndarray]:
+    ) -> Tuple[np.ndarray, float, bool, np.ndarray]:
         """Performs one training step on current state
 
         Args:
@@ -41,7 +53,7 @@ class Environment:
                       to a reaction must be provided. Actual reactant is computed with k nearest neighbours. Defaults to None.
 
         Returns:
-            Tuple[str, float, bool, np.ndarray]: returns tuple (next_state, reward, terminal, t_mask for next_state)
+            Tuple[np.ndarray, float, bool, np.ndarray]: returns tuple (next_state, reward, terminal, t_mask for next_state)
         """
         self.n_steps += 1
         self.current_state, reward = self.chemonster.environment_step_pipeline(
@@ -56,4 +68,8 @@ class Environment:
 
         terminal = too_many_steps or no_more_reactions
 
-        return self.current_state, reward, terminal, t_mask
+        current_state_vect = self.chemonster.vectorize_smiles(
+            self.current_state, "efcp"
+        )
+
+        return current_state_vect, reward, terminal, t_mask
