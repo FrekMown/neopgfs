@@ -7,6 +7,7 @@ from typing import Optional, List, Tuple
 import joblib
 import os
 from time import time
+from sklearn.preprocessing import MinMaxScaler
 
 # Paths to input
 REACTANTS_PATH = "data/enamine_building_blocks.csv"
@@ -57,7 +58,7 @@ class Chemonster:
             f"reactants.shape={self.reactants.shape}, reactions.shape={self.reactions.shape}"
         )
 
-        # Compute action RLV2 space, dims (n_reactants x n_descriptors)
+        # Compute action RLV2 space, dims (n_reactants x n_descriptors) and normalize it
         if compute_action_space:
             self.reactants_rlv2_space = self.compute_rlv2_space_reactants()
             np.save(
@@ -67,6 +68,8 @@ class Chemonster:
             self.reactants_rlv2_space = np.load(
                 os.path.join(filedir, REACTANTS_SPACE_PATH)
             )
+        scaler = MinMaxScaler(feature_range=(-1, 1))
+        self.reactants_rlv2_space = scaler.fit_transform(self.reactants_rlv2_space)
 
         # Add inverse reaction for bimolecular reactions
         def inverse_reaction(rxn: ChemicalReaction) -> ChemicalReaction:
@@ -261,12 +264,19 @@ class Chemonster:
         return AllChem.MolToSmiles(product)
 
     def vectorize_smiles(
-        self,
-        smiles: str,
-        method: str,
-        efcp_radius: Optional[int] = None,
-        efcp_length: Optional[int] = None,
+        self, smiles: str, method: str, efcp_radius: int = 2, efcp_length: int = 1024,
     ) -> np.ndarray:
+        """Vectorizes molecule represented as SMILES using a specific method
+
+        Args:
+            smiles (str): SMILES of the molecule to be vectorized
+            method (str): can be efcp, rlv2 or qsar
+            efcp_radius (Optional[int], optional): radius for efcp. Defaults to 2.
+            efcp_length (Optional[int], optional): length of efcp. Defaults to 1024.
+
+        Returns:
+            np.ndarray: [description]
+        """
         mol = AllChem.MolFromSmiles(smiles)
 
         allowed_methods = ["qsar", "rlv2", "efcp"]
@@ -287,9 +297,7 @@ class Chemonster:
                 self.descriptor_functions[desc](mol) for desc in self.rlv2_descriptors
             ]
 
-        elif method == "efcp":  # efcp
-            efcp_radius = efcp_radius or 2
-            efcp_length = efcp_length or 1024
+        elif method == "efcp":
             res = AllChem.GetMorganFingerprintAsBitVect(mol, efcp_radius, efcp_length)
 
         return np.array(res)
@@ -382,7 +390,7 @@ class Chemonster:
             k_scores = np.array(
                 [self.scoring_function(smiles) for smiles in k_products]
             )
-            next_state = k_products[k_scores.argmax()]
+            next_state = k_products[int(k_scores.argmax())]
             reward = k_scores.max()
 
         return next_state, reward
