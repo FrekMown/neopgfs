@@ -1,12 +1,29 @@
 import numpy as np
+from typing import Tuple, List
 
 
 # Code based on:
 # https://github.com/openai/baselines/blob/master/baselines/deepq/replay_buffer.py
 
-# Expects tuples of (state, next_state, action, reward, done)
+# Expects tuples of (state, action_T, action_R, next_state, next_T_mask, reward, done)
+
+FloatArray = np.ndarray[np.float64]
+BoolArray = np.ndarray[np.bool_]
+
+BufferSample = Tuple[
+    FloatArray, FloatArray, FloatArray, FloatArray, BoolArray, float, bool
+]
+MinibatchSample = Tuple[
+    FloatArray, FloatArray, FloatArray, FloatArray, BoolArray, FloatArray, BoolArray,
+]
+
+
 class ReplayBuffer(object):
-    """Buffer to store tuples of experience replay"""
+    """Buffer to store tuples of experience replay
+       Saves data as (state, action_T, action_R, reward, done)
+    """
+
+    storage: List[BufferSample]
 
     def __init__(self, max_size=1000000):
         """
@@ -18,11 +35,12 @@ class ReplayBuffer(object):
         self.max_size = max_size
         self.ptr = 0
 
-    def add(self, data):
+    def add(self, data: BufferSample) -> None:
         """Add experience tuples to buffer
 
         Args:
-            data (tuple): experience replay tuple
+            data (tuple): experience replay tuple holding
+
         """
 
         if len(self.storage) == self.max_size:
@@ -31,28 +49,40 @@ class ReplayBuffer(object):
         else:
             self.storage.append(data)
 
-    def sample(self, batch_size):
+    def sample_minibatch(self, batch_size: int) -> MinibatchSample:
         """Samples a random amount of experiences from buffer of batch size
 
         Args:
             batch_size (int): size of sample
         """
 
-        ind = np.random.randint(0, len(self.storage), size=batch_size)
-        states, actions, next_states, rewards, dones = [], [], [], [], []
+        indices = np.random.randint(low=0, high=len(self.storage), size=batch_size)
+        states, as_T, as_R, next_states, masks_t, rewards, dones = (
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
 
-        for i in ind:
-            s, a, s_, r, d = self.storage[i]
-            states.append(np.array(s, copy=False))
-            actions.append(np.array(a, copy=False))
-            next_states.append(np.array(s_, copy=False))
-            rewards.append(np.array(r, copy=False))
-            dones.append(np.array(d, copy=False))
+        for i in indices:
+            buffer_item = self.storage[i]
+            states.append(buffer_item[0])
+            as_T.append(buffer_item[1])
+            as_R.append(buffer_item[2])
+            next_states.append(buffer_item[3])
+            masks_t.append(buffer_item[4])
+            rewards.append(buffer_item[5])
+            dones.append(buffer_item[6])
 
         return (
             np.array(states),
-            np.array(actions),
+            np.array(as_T),
+            np.array(as_R),
             np.array(next_states),
+            np.array(masks_t),
             np.array(rewards).reshape(-1, 1),
             np.array(dones).reshape(-1, 1),
         )

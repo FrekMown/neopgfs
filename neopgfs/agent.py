@@ -1,223 +1,301 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+from torch import Tensor
 import numpy as np
+from typing import Tuple
+from .replay_buffer import MinibatchSample
+from torch.optim import Adam
 
 
 class Actor(nn.Module):
-    """Initialize parameters and build model.
+    def __init__(
+        self, state_dim: int, action_T_dim: int, action_R_dim: int,
+    ):
+        """Generates a new actor object containing two neural networks for function
+        approximation: f(state) -> action_T and pi(state, action_T) -> action_R.
+
         Args:
-            state_size (int): Dimension of each state
-            action_size (int): Dimension of each action
-            max_action (float): highest action to take
-            seed (int): Random seed
-            h1_units (int): Number of nodes in first hidden layer
-            h2_units (int): Number of nodes in second hidden layer
-
-        Return:
-            action output of network with tanh activation
-    """
-
-    def __init__(self, state_dim, action_dim, max_action):
+            state_dim (int): Dimension of state vector (n_bits)
+            action_T_dim (int): Dimension of action_T vector (num_reactions)
+            action_R_dim (int): Dimension of action_R vector (num_features)
+        """
         super(Actor, self).__init__()
 
-        self.l1 = nn.Linear(state_dim, 400)
-        self.l2 = nn.Linear(400, 300)
-        self.l3 = nn.Linear(300, action_dim)
+        # f Network to choose template f(state) -> action_T
+        self.f = nn.Sequential(
+            nn.Linear(state_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, action_T_dim),
+            nn.Tanh(),
+        )
 
-        self.max_action = max_action
+        # Deterministic policy architecture pi(state, T_one_hot) -> action
+        self.pi = nn.Sequential(
+            nn.Linear(state_dim + action_T_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 167),
+            nn.ReLU(),
+            nn.Linear(167, action_R_dim),
+            nn.Tanh(),
+        )
 
-    def forward(self, x):
-        x = F.relu(self.l1(x))
-        x = F.relu(self.l2(x))
-        x = self.max_action * torch.tanh(self.l3(x))
-        return x
+    def forward(
+        self, state: Tensor, T_mask: Tensor, gumbel_tau: float
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        """Makes a forward pass for the actor, returns action_R and action_T.
+
+        Args:
+            state (Tensor): tensor representing current state
+            T_mask (Tensor): one-hot tensor representing the reactions that might be used
+            with current state as first reactant
+            gumbel_tau (float): temperature parameter for Gumbel Softmax function,
+            controlling the degree of exploration to be performed
+
+        Returns:
+            Tuple[Tensor, Tensor, Tensor]: action_T representing the chosen reaction template,
+            action_R representing the chosen second reactant, and T representing the raw
+            output of the f network
+        """
+        # Choose action_T using f network
+        T_raw: Tensor = self.f(state)
+
+        # Transform action_T to one_hot using Gumbel Softmax
+        action_T = F.gumbel_softmax(T_raw * T_mask, gumbel_tau)
+
+        # Choose action_R using policy network
+        action_R: Tensor = self.pi(torch.cat([state, action_T]), axis=1)
+
+        return action_T, action_R, T_raw
 
 
 class Critic(nn.Module):
-    """Initialize parameters and build model.
+    def __init__(self, state_dim: int, action_T_dim: int, action_R_dim: int):
+        """Creates a critic object holding two neural networks representing
+        two versions of the Q-value function: Q(state, action_T, action_R) -> float
+
         Args:
-            state_size (int): Dimension of each state
-            action_size (int): Dimension of each action
-            max_action (float): highest action to take
-            seed (int): Random seed
-            h1_units (int): Number of nodes in first hidden layer
-            h2_units (int): Number of nodes in second hidden layer
-
-        Return:
-            value output of network
-    """
-
-    def __init__(self, state_dim, action_dim):
+            state_dim (int): Dimension of the state vector (num_bits)
+            action_T_dim (int): Dimension of action_T (num_reactions)
+            action_R_dim (int): Dimension of action_R (num_descriptors)
+        """
         super(Critic, self).__init__()
 
-        # Q1 architecture
-        self.l1 = nn.Linear(state_dim + action_dim, 400)
-        self.l2 = nn.Linear(400, 300)
-        self.l3 = nn.Linear(300, 1)
+        self.Q1_model = nn.Sequential(
+            nn.Linear(state_dim + action_T_dim + action_R_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 16),
+            nn.ReLU(),
+            nn.Linear(16, 1),
+        )
 
-        # Q2 architecture
-        self.l4 = nn.Linear(state_dim + action_dim, 400)
-        self.l5 = nn.Linear(400, 300)
-        self.l6 = nn.Linear(300, 1)
+        self.Q2_model = nn.Sequential(
+            nn.Linear(state_dim + action_T_dim + action_R_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 16),
+            nn.ReLU(),
+            nn.Linear(16, 1),
+        )
 
-    def forward(self, x, u):
-        xu = torch.cat([x, u], 1)
-
-        x1 = F.relu(self.l1(xu))
-        x1 = F.relu(self.l2(x1))
-        x1 = self.l3(x1)
-
-        x2 = F.relu(self.l4(xu))
-        x2 = F.relu(self.l5(x2))
-        x2 = self.l6(x2)
-        return x1, x2
-
-    def Q1(self, x, u):
-        xu = torch.cat([x, u], 1)
-
-        x1 = F.relu(self.l1(xu))
-        x1 = F.relu(self.l2(x1))
-        x1 = self.l3(x1)
-        return x1
-
-
-class TD3(object):
-    """Agent class that handles the training of the networks and provides outputs as actions
+    def forward(
+        self, state: Tensor, action_T: Tensor, action_R: Tensor
+    ) -> Tuple[Tensor, Tensor]:
+        """Makes a forward pass of the critic object, returns two q-values, one for each
+        Q neural network
 
         Args:
-            state_dim (int): state size
-            action_dim (int): action size
-            max_action (float): highest action to take
-            device (device): cuda or cpu to process tensors
-            env (env): gym environment to use
+            state (Tensor): tensor holding current state
+            action_T (Tensor): tensor holding action_T chosen by the actor
+            action_R (Tensor): tensor holding action_R chosen by the actor
 
-    """
-
-    def __init__(self, state_dim, action_dim, max_action, env):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.actor = Actor(state_dim, action_dim, max_action).to(self.device)
-        self.actor_target = Actor(state_dim, action_dim, max_action).to(self.device)
-        self.actor_target.load_state_dict(self.actor.state_dict())
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=1e-3)
-
-        self.critic = Critic(state_dim, action_dim).to(self.device)
-        self.critic_target = Critic(state_dim, action_dim).to(self.device)
-        self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=1e-3)
-
-        self.max_action = max_action
-        # needed to add error to action accordingly to limits and good shape
-        self.env = env
-
-    def select_action(self, state, noise=0.1):
-        """Select an appropriate action from the agent policy
-
-            Args:
-                state (array): current state of environment
-                noise (float): how much noise to add to acitons
-
-            Returns:
-                action (float): action clipped within action range
-
+        Returns:
+            Tuple[Tensor, Tensor]: tuple of tensors holding q-value computed by
+            each Q value function.
         """
+        state_actions = torch.cat([state, action_T, action_R], 1)
+        return self.Q1_model(state_actions), self.Q2_model(state_actions)
 
-        state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
+    def Q1(self, state: Tensor, action_T: Tensor, action_R: Tensor) -> Tensor:
+        state_actions = torch.cat([state, action_T, action_R], 1)
+        return self.Q1_model(state_actions)
 
-        action = self.actor(state).cpu().data.numpy().flatten()
-        if noise != 0:
-            action = action + np.random.normal(
-                0, noise, size=self.env.action_space.shape[0]
-            )
 
-        return action.clip(self.env.action_space.low, self.env.action_space.high)
-
-    def train(
+class Agent:
+    def __init__(
         self,
-        replay_buffer,
-        iterations,
-        batch_size=100,
-        discount=0.99,
-        tau=0.005,
-        policy_noise=0.2,
-        noise_clip=0.5,
-        policy_freq=2,
+        state_dim: int,
+        action_T_dim: int,
+        action_R_dim: int,
+        discount: float,
+        tau_td3: float,
+        device: str,
+        action_R_low: int = -1,
+        action_R_high: int = 1,
     ):
-        """Train and update actor and critic networks
+        """Generates an agent object holding an actor and a critic
 
-            Args:
-                replay_buffer (ReplayBuffer): buffer for experience replay
-                iterations (int): how many times to run training
-                batch_size(int): batch size to sample from replay buffer
-                discount (float): discount factor
-                tau (float): soft update for main networks to target networks
-
-            Return:
-                actor_loss (float): loss from actor network
-                critic_loss (float): loss from critic network
-
+        Args:
+            state_dim (int): Dimension of the state (num_bits)
+            action_T_dim (int): Dimension of the action_T (num_reactions)
+            action_R_dim (int): Dimension of the action_R (num_descriptors)
+            discount (float): discount of future rewards (gamma)
+            tau_td3 (float): update rate for target networks
+            device (str): cuda or cpu
+            action_R_low (int, optional): Lowest possible value of action_R. Defaults to -1.
+            action_R_high (int, optional): Highest possible value of action_R. Defaults to 1.
         """
+        self.device = device
 
-        for it in range(iterations):
+        # Creation of actors
+        self.actor = Actor(state_dim, action_T_dim, action_R_dim).to(self.device)
+        self.actor_target = Actor(state_dim, action_T_dim, action_R_dim).to(self.device)
+        self.actor_target.load_state_dict(self.actor.state_dict())
 
-            # Sample replay buffer
-            x, y, u, r, d = replay_buffer.sample(batch_size)
-            state = torch.FloatTensor(x).to(self.device)
-            action = torch.FloatTensor(u).to(self.device)
-            next_state = torch.FloatTensor(y).to(self.device)
-            done = torch.FloatTensor(1 - d).to(self.device)
-            reward = torch.FloatTensor(r).to(self.device)
+        # Creation of critic
+        self.critic = Critic(state_dim, action_T_dim, action_R_dim).to(self.device)
+        self.critic_target = Critic(state_dim, action_T_dim, action_R_dim).to(
+            self.device
+        )
+        self.critic_target.load_state_dict(self.critic.state_dict())
 
-            # Select action according to policy and add clipped noise
-            noise = torch.FloatTensor(u).data.normal_(0, policy_noise).to(self.device)
-            noise = noise.clamp(-noise_clip, noise_clip)
-            next_action = (self.actor_target(next_state) + noise).clamp(
-                -self.max_action, self.max_action
+        # Definition of optimizers
+        self.actor_optimizer = Adam(self.actor.parameters(), lr=1e-4)
+        self.critic_optimizer = Adam(self.critic.parameters(), lr=3e-4)
+
+        # Keep track of other parameters
+        self.state_dim = state_dim
+        self.action_T_dim = action_T_dim
+        self.action_R_dim = action_R_dim
+        self.action_R_low = action_R_low
+        self.action_R_high = action_R_high
+
+        self.discount = discount
+        self.tau_td3 = tau_td3
+
+    def select_action(
+        self, state: Tensor, T_mask: Tensor, gumbel_tau: float, sd_noise: float,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Given current state performs a forward pass of the actor thereby computing
+        action_T and action_R. The latter gets noise added and clipped as in TD3 algorithm.
+
+        Args:
+            state (Tensor): tensor representing current state (num_bits)
+            T_mask (Tensor): one-hot tensor accepting only reactions which can be used
+                            with state as first reactant
+            gumbel_tau (float): Temperature parameter for gumbel softmax function controlling
+                            the degree of exploration / exploitation.
+            sd_noise (float): SD of the noise added to the action
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: action_T and action_R as numpy arrays
+        """
+        # Reshape state
+        state = state.reshape(1, -1)
+
+        # Compute actions
+        actions: Tuple[Tensor, Tensor] = self.actor(state, T_mask, gumbel_tau)
+        action_R: np.ndarray = actions[0].cpu().numpy().flatten()
+        action_T: np.ndarray = actions[1].cpu().numpy().flatten()
+
+        # Transform action_R by adding clipped noise and clipping as in TD3 algorithm
+        action_R += np.random.normal(0, sd_noise, size=action_R.shape[0])
+        action_R = action_R.clip(self.action_R_low, self.action_R_high)
+
+        return action_T, action_R
+
+    def train_minibatch(
+        self,
+        minibatch: MinibatchSample,
+        update_targets: bool,
+        gumbel_tau: float,
+        td3_tau: float,
+    ):
+
+        # Get information from minibatch
+        states = torch.Tensor(minibatch[0])
+        actions_T = torch.Tensor(minibatch[1])
+        # actions_R = minibatch[2]
+        next_states = torch.Tensor(minibatch[3])
+        t_masks = torch.Tensor(minibatch[4])
+        rewards = torch.Tensor(minibatch[5])
+        dones = torch.Tensor(minibatch[6])
+
+        # Select action according to policy
+        next_actions_T: Tensor
+        next_actions_R: Tensor
+        next_actions_T, next_actions_R, _ = self.actor_target(
+            actions_T, t_masks, gumbel_tau
+        )
+
+        # Compute the target Q value
+        target_Q1: Tensor
+        target_Q2: Tensor
+        target_Q1, target_Q2 = self.critic_target(
+            states, next_actions_T, next_actions_R
+        )
+
+        target_Q: Tensor
+        target_Q = torch.min(target_Q1, target_Q2)
+        target_Q = rewards + ((1 - dones) * self.discount * target_Q).detach()
+
+        # Get current Q estimates
+        current_Q1: Tensor
+        current_Q2: Tensor
+        current_Q1, current_Q2 = self.critic(
+            next_states, next_actions_T, next_actions_R
+        )
+
+        # Compute critic loss
+        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
+            current_Q2, target_Q
+        )
+
+        # Optimize the critic
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
+
+        # Delayed policy updates
+        if update_targets:
+
+            # Compute actor loss
+            next_actions_T, next_actions_R, next_T_raw = self.actor(
+                next_states, t_masks, gumbel_tau
             )
+            f_loss = F.cross_entropy(next_T_raw, next_actions_T)
 
-            # Compute the target Q value
-            target_Q1, target_Q2 = self.critic_target(next_state, next_action)
-            target_Q = torch.min(target_Q1, target_Q2)
-            target_Q = reward + (done * discount * target_Q).detach()
+            actor_loss = -self.critic.Q1(states, next_actions_T, next_actions_R).mean()
+            actor_loss += f_loss
 
-            # Get current Q estimates
-            current_Q1, current_Q2 = self.critic(state, action)
+            # Optimize the actor
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            self.actor_optimizer.step()
 
-            # Compute critic loss
-            critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-                current_Q2, target_Q
-            )
+            # Update the frozen target models
+            for param, target_param in zip(
+                self.critic.parameters(), self.critic_target.parameters()
+            ):
+                target_param.data.copy_(
+                    td3_tau * param.data + (1 - td3_tau) * target_param.data
+                )
 
-            # Optimize the critic
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            self.critic_optimizer.step()
-
-            # Delayed policy updates
-            if it % policy_freq == 0:
-
-                # Compute actor loss
-                actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
-
-                # Optimize the actor
-                self.actor_optimizer.zero_grad()
-                actor_loss.backward()
-                self.actor_optimizer.step()
-
-                # Update the frozen target models
-                for param, target_param in zip(
-                    self.critic.parameters(), self.critic_target.parameters()
-                ):
-                    target_param.data.copy_(
-                        tau * param.data + (1 - tau) * target_param.data
-                    )
-
-                for param, target_param in zip(
-                    self.actor.parameters(), self.actor_target.parameters()
-                ):
-                    target_param.data.copy_(
-                        tau * param.data + (1 - tau) * target_param.data
-                    )
+            for param, target_param in zip(
+                self.actor.parameters(), self.actor_target.parameters()
+            ):
+                target_param.data.copy_(
+                    td3_tau * param.data + (1 - td3_tau) * target_param.data
+                )
 
     def save(self, filename, directory):
         torch.save(self.actor.state_dict(), "%s/%s_actor.pth" % (directory, filename))
