@@ -11,7 +11,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 # Paths to input
 REACTANTS_PATH = "data/enamine_building_blocks.csv"
-REACTIONS_PATH = "data/rxn_set.txt"
+REACTIONS_PATH = "data/rxn_set_v2.txt"
 RLV2_DESCRIPTORS_PATH = "data/descriptors_rlv2.txt"
 QSAR_DESCRIPTORS_PATH = "data/descriptors_qsar_models.txt"
 REACTANTS_SPACE_PATH = "data/rlv2_space_reactants.npy"
@@ -52,7 +52,9 @@ class Chemonster:
 
         # Load reactions
         with open(os.path.join(filedir, REACTIONS_PATH)) as f:
-            self.reactions = np.array([line.split("|")[1] for line in f])
+            self.reactions = np.array(
+                [line.split("|")[1] for line in f.readlines()[1:]]
+            )
 
         print(
             f"reactants.shape={self.reactants.shape}, reactions.shape={self.reactions.shape}"
@@ -71,25 +73,8 @@ class Chemonster:
         scaler = MinMaxScaler(feature_range=(-1, 1))
         self.reactants_rlv2_space = scaler.fit_transform(self.reactants_rlv2_space)
 
-        # Add inverse reaction for bimolecular reactions
-        def inverse_reaction(rxn: ChemicalReaction) -> ChemicalReaction:
-            rxn_double = ChemicalReaction()
-            reactants = list(rxn.GetReactants())
-            rxn_double.AddReactantTemplate(reactants[1])
-            rxn_double.AddReactantTemplate(reactants[0])
-            rxn_double.AddProductTemplate(list(rxn.GetProducts())[0])
-            return rxn_double
-
-        for rxn_smarts in self.reactions.copy():
-            rxn = AllChem.ReactionFromSmarts(rxn_smarts)
-            if rxn.GetNumReactantTemplates() == 2:
-
-                rxn_inv_smarts = AllChem.ReactionToSmarts(inverse_reaction(rxn))
-                self.reactions = np.append(self.reactions, [rxn_inv_smarts])
-        # print(f"new reactions.shape={self.reactions.shape}")
-
         # Arrays holding reactants available for each reaction
-        # Created with script "rel_reactant_reactions.py"
+        # Created with script "treat_reactions.py"
         # Dimensions: (n_reactants, n_reactions)
         self.rel_r0_rxns = np.load(os.path.join(filedir, REL_R0_REACTIONS))
         self.rel_r1_rxns = np.load(os.path.join(filedir, REL_R1_REACTIONS))
@@ -100,27 +85,6 @@ class Chemonster:
         assert (
             self.rel_r1_rxns.shape == exp_shape_rels
         ), f"Expected dimension for rel_r1_rxns is {exp_shape_rels}, got {self.rel_r1_rxns.shape}"
-
-        # Identify bimolecular reactions with less than 50 second reactants
-        nb_r1_per_rxn = self.rel_r1_rxns.sum(axis=0)
-        reactions_less_50 = np.where(nb_r1_per_rxn < 50)[0]
-        unimolecular = []  # unimolecular reactions excluded
-        for arr_idx, rxn_idx in enumerate(reactions_less_50):
-            rxn = self.get_reaction(rxn_idx)
-            if rxn.GetNumReactantTemplates() == 1:
-                unimolecular.append(arr_idx)
-
-        # print(reactions_less_50)
-        # print(unimolecular)
-        reactions_less_50 = np.delete(reactions_less_50, unimolecular, 0)
-
-        # Clear these reactions from arrays
-        self.reactions = np.delete(self.reactions, reactions_less_50, 0)
-        self.rel_r0_rxns = np.delete(self.rel_r0_rxns, reactions_less_50, 1)
-        self.rel_r1_rxns = np.delete(self.rel_r1_rxns, reactions_less_50, 1)
-        print(
-            f"Final number of reactions={len(self.reactions)}, shape of relations={self.rel_r0_rxns.shape} / {self.rel_r1_rxns.shape}"
-        )
 
         # Initialize KNN classifiers, indexed by reaction idx
         t0 = time()

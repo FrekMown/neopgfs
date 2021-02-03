@@ -15,7 +15,7 @@ class TestChemonster(unittest.TestCase):
     def test_k_neighbors(self):
         action = np.load("action_test.npy")
         reaction_index = 25
-        result = [45943, 45942, 109993, 110695, 110694]
+        result = [2552, 2641, 5373, 3178, 3232]
         self.assertEqual(
             self.chemonster.get_k_neighbors(action, reaction_index), result
         )
@@ -23,7 +23,7 @@ class TestChemonster(unittest.TestCase):
     def test_reaction_predictor(self):
         r0_smiles = "CC#Cc1cccc(B(O)O)c1"
         r1_idx = 1747
-        rxn_idx = 110
+        rxn_idx = 96
         exp_result = "C#Cc1cn(-c2cccc(C#CC)c2)cn1"
         result = self.chemonster.reaction_predictor(rxn_idx, r0_smiles, r1_idx)
         self.assertEqual(exp_result, result)
@@ -59,10 +59,10 @@ class TestChemonster(unittest.TestCase):
 
     def test_env_step_pipeline(self):
         curr_state = "CCN(CC)C(=O)c1ccc(C=O)cc1"
-        rxn_idx = 25
+        rxn_idx = 31
         r1_rlv2_noisy = np.load("action_R_test_pipeline.npy")
-        exp_smiles = "CCN(CC)C(=O)c1ccc(-c2nc3c(c4ccccc4-c4ccc(N)cc4-3)-[nH]2)cc1"
-        exp_reward = 5.089601910061103
+        exp_smiles = "CCN(CC)C(=O)c1ccc(CN[C@@H](Cc2c[nH]c3ccccc23)C(=O)N[C@@H](CCCNC(=N)N)C(=O)Nc2cccc(C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(N)=O)c2)cc1"
+        exp_reward = 5.735187515665501
         smiles, reward = self.chemonster.environment_step_pipeline(
             curr_state, rxn_idx, r1_rlv2_noisy
         )

@@ -3,6 +3,5 @@
     --> action_T defined as one hot vector from gumbel softmax
     --> rxn_idx corresponds to the reaction encoded in action_T
     --> f_loss to be verified
-    --> test k_neighbours failing :()
 --> TODO: Runner should iterations
 --> TODO: Lightweight testing for agent and replaybuffer

@@ -17,13 +17,11 @@ class Environment:
     observation_space: dict
     rand_generator: RandomState
 
-    def __init__(
-        self, chemonster: Chemonster, rand_generator: RandomState, max_steps: int = 10
-    ):
+    def __init__(self, chemonster: Chemonster, max_steps: int = 5, seed: int = 5):
         self.chemonster = chemonster
         self.max_steps = max_steps
         self.description = "Chemical Environment for neoPGFS"
-        self.rand_generator = rand_generator
+        self.rand_generator = RandomState(seed)
 
         # Define observation space
         self.observation_space = {
