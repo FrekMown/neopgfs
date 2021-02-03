@@ -1,133 +1,13 @@
-import torch.nn as nn
+from .actor import Actor
+from .critic import Critic
+from .replay_buffer import MinibatchSample
+
 import torch.nn.functional as F
 import torch
 from torch import Tensor
 import numpy as np
 from typing import Tuple
-from .replay_buffer import MinibatchSample
 from torch.optim import Adam
-
-
-class Actor(nn.Module):
-    def __init__(
-        self, state_dim: int, action_T_dim: int, action_R_dim: int,
-    ):
-        """Generates a new actor object containing two neural networks for function
-        approximation: f(state) -> action_T and pi(state, action_T) -> action_R.
-
-        Args:
-            state_dim (int): Dimension of state vector (n_bits)
-            action_T_dim (int): Dimension of action_T vector (num_reactions)
-            action_R_dim (int): Dimension of action_R vector (num_features)
-        """
-        super(Actor, self).__init__()
-
-        # f Network to choose template f(state) -> action_T
-        self.f = nn.Sequential(
-            nn.Linear(state_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Linear(128, 128),
-            nn.ReLU(),
-            nn.Linear(128, action_T_dim),
-            nn.Tanh(),
-        )
-
-        # Deterministic policy architecture pi(state, T_one_hot) -> action
-        self.pi = nn.Sequential(
-            nn.Linear(state_dim + action_T_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 167),
-            nn.ReLU(),
-            nn.Linear(167, action_R_dim),
-            nn.Tanh(),
-        )
-
-    def forward(
-        self, state: Tensor, T_mask: Tensor, gumbel_tau: float
-    ) -> Tuple[Tensor, Tensor, Tensor]:
-        """Makes a forward pass for the actor, returns action_R and action_T.
-
-        Args:
-            state (Tensor): tensor representing current state
-            T_mask (Tensor): one-hot tensor representing the reactions that might be used
-            with current state as first reactant
-            gumbel_tau (float): temperature parameter for Gumbel Softmax function,
-            controlling the degree of exploration to be performed
-
-        Returns:
-            Tuple[Tensor, Tensor, Tensor]: action_T representing the chosen reaction template,
-            action_R representing the chosen second reactant, and T representing the raw
-            output of the f network
-        """
-        # Choose action_T using f network
-        T_raw: Tensor = self.f(state)
-
-        # Transform action_T to one_hot using Gumbel Softmax
-        action_T = F.gumbel_softmax(T_raw * T_mask, gumbel_tau)
-
-        # Choose action_R using policy network
-        action_R: Tensor = self.pi(torch.cat([state, action_T]), axis=1)
-
-        return action_T, action_R, T_raw
-
-
-class Critic(nn.Module):
-    def __init__(self, state_dim: int, action_T_dim: int, action_R_dim: int):
-        """Creates a critic object holding two neural networks representing
-        two versions of the Q-value function: Q(state, action_T, action_R) -> float
-
-        Args:
-            state_dim (int): Dimension of the state vector (num_bits)
-            action_T_dim (int): Dimension of action_T (num_reactions)
-            action_R_dim (int): Dimension of action_R (num_descriptors)
-        """
-        super(Critic, self).__init__()
-
-        self.Q1_model = nn.Sequential(
-            nn.Linear(state_dim + action_T_dim + action_R_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 64),
-            nn.ReLU(),
-            nn.Linear(64, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-        )
-
-        self.Q2_model = nn.Sequential(
-            nn.Linear(state_dim + action_T_dim + action_R_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 64),
-            nn.ReLU(),
-            nn.Linear(64, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-        )
-
-    def forward(
-        self, state: Tensor, action_T: Tensor, action_R: Tensor
-    ) -> Tuple[Tensor, Tensor]:
-        """Makes a forward pass of the critic object, returns two q-values, one for each
-        Q neural network
-
-        Args:
-            state (Tensor): tensor holding current state
-            action_T (Tensor): tensor holding action_T chosen by the actor
-            action_R (Tensor): tensor holding action_R chosen by the actor
-
-        Returns:
-            Tuple[Tensor, Tensor]: tuple of tensors holding q-value computed by
-            each Q value function.
-        """
-        state_actions = torch.cat([state, action_T, action_R], 1)
-        return self.Q1_model(state_actions), self.Q2_model(state_actions)
-
-    def Q1(self, state: Tensor, action_T: Tensor, action_R: Tensor) -> Tensor:
-        state_actions = torch.cat([state, action_T, action_R], 1)
-        return self.Q1_model(state_actions)
 
 
 class Agent:
@@ -151,6 +31,7 @@ class Agent:
             discount (float): discount of future rewards (gamma)
             tau_td3 (float): update rate for target networks
             device (str): cuda or cpu
+            rand_generator (RandomState): random generator
             action_R_low (int, optional): Lowest possible value of action_R. Defaults to -1.
             action_R_high (int, optional): Highest possible value of action_R. Defaults to 1.
         """
@@ -184,7 +65,7 @@ class Agent:
 
     def select_action(
         self, state: Tensor, T_mask: Tensor, gumbel_tau: float, sd_noise: float,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Given current state performs a forward pass of the actor thereby computing
         action_T and action_R. The latter gets noise added and clipped as in TD3 algorithm.
 
@@ -199,19 +80,19 @@ class Agent:
         Returns:
             Tuple[np.ndarray, np.ndarray]: action_T and action_R as numpy arrays
         """
-        # Reshape state
         state = state.reshape(1, -1)
 
         # Compute actions
-        actions: Tuple[Tensor, Tensor] = self.actor(state, T_mask, gumbel_tau)
+        actions: Tuple[Tensor, Tensor, Tensor] = self.actor(state, T_mask, gumbel_tau)
         action_R: np.ndarray = actions[0].cpu().numpy().flatten()
         action_T: np.ndarray = actions[1].cpu().numpy().flatten()
+        t_mask: np.ndarray = actions[2].cpu().numpy().flatten()
 
         # Transform action_R by adding clipped noise and clipping as in TD3 algorithm
         action_R += np.random.normal(0, sd_noise, size=action_R.shape[0])
         action_R = action_R.clip(self.action_R_low, self.action_R_high)
 
-        return action_T, action_R
+        return action_T, action_R, t_mask
 
     def train_minibatch(
         self,
@@ -220,7 +101,6 @@ class Agent:
         gumbel_tau: float,
         td3_tau: float,
     ):
-
         # Get information from minibatch
         states = torch.Tensor(minibatch[0])
         actions_T = torch.Tensor(minibatch[1])

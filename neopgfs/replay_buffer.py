@@ -20,7 +20,7 @@ MinibatchSample = Tuple[
 
 class ReplayBuffer(object):
     """Buffer to store tuples of experience replay
-       Saves data as (state, action_T, action_R, reward, done)
+       Saves data as (state, action_T, action_R, next_state, next_T_mask, reward, done)
     """
 
     storage: List[BufferSample]

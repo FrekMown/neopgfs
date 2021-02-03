@@ -186,28 +186,28 @@ class Chemonster:
         """
         return AllChem.MolFromSmiles(self.reactants[reactant_idx])
 
-    def get_k_neighbors(self, action_R: np.ndarray, action_T: int) -> List[int]:
+    def get_k_neighbors(self, action_R: np.ndarray, rxn_idx: int) -> List[int]:
         """Returns k neighbors to action in RLV2 reactants space.
         Parameter k is defined at initialization of the environment.
         Takes into account only molecules that might be used for a given template
 
         Args:
             action_R (np.ndarray): dimensions (1 x n_RLV2_descriptors)
-            action_T (int): index of the reaction to be taken into account
+            rxn_idx (int): index of the reaction to be taken into account
 
         Returns:
             List[int]: holds indices of k_nearest_neighbors (reactants) considering only
-                       valid reactants for reaction action_T
+                       valid reactants for reaction rxn_idx
         """
         if len(action_R.shape) == 1:
             action_R = action_R.reshape(1, -1)
 
-        # Indices with respect to set given to self.knn_models[action_T]
-        k_neighbors_rxn_ref = self.knn_models[action_T].kneighbors(
+        # Indices with respect to set given to self.knn_models[rxn_idx]
+        k_neighbors_rxn_ref = self.knn_models[rxn_idx].kneighbors(
             action_R, return_distance=False
         )[0]
         # Transform indices to original scale
-        return np.where(self.rel_r1_rxns[:, action_T])[0][k_neighbors_rxn_ref].tolist()
+        return np.where(self.rel_r1_rxns[:, rxn_idx])[0][k_neighbors_rxn_ref].tolist()
 
     # TO BE UPDATED
     def compute_rlv2_space_reactants(self) -> np.ndarray:
@@ -354,7 +354,7 @@ class Chemonster:
         return t_mask
 
     def environment_step_pipeline(
-        self, current_state: str, action_T: int, action_R: Optional[np.ndarray] = None
+        self, current_state: str, rxn_idx: int, action_R: Optional[np.ndarray] = None,
     ) -> Tuple[str, float]:
         """Given current state, a template reaction and optionally a second reactant, this
         function computes product of the reaction as well as its score (reward)
@@ -371,20 +371,20 @@ class Chemonster:
 
         """
         # Grab reaction from template
-        rxn = AllChem.ReactionFromSmarts(self.reactions[action_T])
+        rxn = AllChem.ReactionFromSmarts(self.reactions[rxn_idx])
 
         # If only one reactant in reaction, apply reaction and return product
         if rxn.GetNumReactantTemplates() == 1:
-            next_state = self.reaction_predictor(action_T, current_state)
+            next_state = self.reaction_predictor(rxn_idx, current_state)
             reward = self.scoring_function(next_state)
         else:
             assert (
                 action_R is not None
             ), "action_R should be provided for bimolecular reactions"
 
-            k_reactant_idx = self.get_k_neighbors(action_R, action_T)  # dim (k, 1)
+            k_reactant_idx = self.get_k_neighbors(action_R, rxn_idx)  # dim (k, 1)
             k_products = [
-                self.reaction_predictor(action_T, current_state, idx)
+                self.reaction_predictor(rxn_idx, current_state, idx)
                 for idx in k_reactant_idx
             ]
             k_scores = np.array(

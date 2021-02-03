@@ -2,6 +2,8 @@ import numpy as np
 from .environment import Environment
 from .agent import Agent
 from .replay_buffer import ReplayBuffer
+from torch import Tensor
+from typing import Tuple
 
 
 class Runner:
@@ -13,7 +15,7 @@ class Runner:
         self.agent = agent
         self.replay_buffer = replay_buffer
         self.obs = env.reset()
-        self.done: bool = False
+        self.done = False
 
     def next_step(self, episode_timesteps, replay_buffer, noise=0.1):
 
