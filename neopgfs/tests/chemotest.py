@@ -3,10 +3,93 @@ import sys
 from os.path import dirname, abspath, join
 import numpy as np
 
+import torch
+
 path = abspath(join(dirname(__file__), "..", ".."))
 sys.path.append(path)
 
 from neopgfs.chemonster import Chemonster  # noqa
+from neopgfs.agent import Agent
+from neopgfs.actor import Actor
+from neopgfs.critic import Critic
+
+
+class TestAgent(unittest.TestCase):
+    state_dim = 1024
+    action_T_dim = 99
+    action_R_dim = 35
+    batch_size = 32
+    device = "cpu"
+
+    state = torch.rand((batch_size, state_dim)).to(device)
+    action_T = torch.rand((batch_size, action_T_dim)).to(device)
+    T_mask = torch.rand((batch_size, action_T_dim)).to(device)
+    action_R = torch.rand((batch_size, action_R_dim)).to(device)
+    gumbel_tau = 0.1
+    sd_noise = 0.1
+
+    agent = Agent(
+        state_dim=state_dim,
+        action_T_dim=action_T_dim,
+        action_R_dim=action_R_dim,
+        discount=0.99,
+        tau_td3=0.1,
+        device=device,
+    )
+
+    critic = Critic(
+        state_dim=state_dim,
+        action_T_dim=action_T_dim,
+        action_R_dim=action_R_dim,
+        device=device,
+    )
+
+    actor = Actor(
+        state_dim=state_dim,
+        action_T_dim=action_T_dim,
+        action_R_dim=action_R_dim,
+        device=device,
+    )
+
+    def test_actor(self):
+        """Verifies correctness of shapes
+        """
+        output_f = self.actor.f(self.state)
+        output_pi = self.actor.pi(torch.cat([self.state, self.action_T], 1))
+        output_actor = self.actor(self.state, self.T_mask, self.gumbel_tau)
+        self.assertEqual(tuple(output_f.shape), (self.batch_size, self.action_T_dim))
+        self.assertEqual(tuple(output_pi.shape), (self.batch_size, self.action_R_dim))
+        output_T, output_R, output_T_mask = output_actor
+        self.assertEqual(tuple(output_T.shape), (self.batch_size, self.action_T_dim))
+        self.assertEqual(tuple(output_R.shape), (self.batch_size, self.action_R_dim))
+        self.assertEqual(
+            tuple(output_T_mask.shape), (self.batch_size, self.action_T_dim)
+        )
+
+    def test_critic(self):
+        q_input = torch.cat([self.state, self.action_T, self.action_R], 1)
+        output_Q1 = self.critic.Q1_model(q_input)
+        output_Q2 = self.critic.Q2_model(q_input)
+        output_critic_Q1, output_critic_Q2 = self.critic(
+            self.state, self.action_T, self.action_R
+        )
+        self.assertEqual(tuple(output_Q1.shape), (self.batch_size, 1))
+        self.assertEqual(tuple(output_Q2.shape), (self.batch_size, 1))
+        self.assertEqual(tuple(output_critic_Q1.shape), (self.batch_size, 1))
+        self.assertEqual(tuple(output_critic_Q2.shape), (self.batch_size, 1))
+
+    def test_agent(self):
+        output_agent = self.agent.select_action(
+            self.state[0],
+            self.T_mask[0],
+            gumbel_tau=self.gumbel_tau,
+            sd_noise=self.sd_noise,
+        )
+        agent_T, agent_R, agent_T_mask = output_agent
+
+        self.assertEqual(tuple(agent_T.shape), (self.action_T_dim,))
+        self.assertEqual(tuple(agent_R.shape), (self.action_R_dim,))
+        self.assertEqual(tuple(agent_T_mask.shape), (self.action_T_dim,))
 
 
 class TestChemonster(unittest.TestCase):

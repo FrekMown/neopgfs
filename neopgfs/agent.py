@@ -78,13 +78,12 @@ class Agent:
         Returns:
             Tuple[np.ndarray, np.ndarray]: action_T and action_R as numpy arrays
         """
-        state = state.reshape(1, -1)
 
         # Compute actions
         actions: Tuple[Tensor, Tensor, Tensor] = self.actor(state, T_mask, gumbel_tau)
-        action_R: np.ndarray = actions[0].cpu().numpy().flatten()
-        action_T: np.ndarray = actions[1].cpu().numpy().flatten()
-        t_mask: np.ndarray = actions[2].cpu().numpy().flatten()
+        action_T: np.ndarray = actions[0].detach().cpu().numpy().flatten()
+        action_R: np.ndarray = actions[1].detach().cpu().numpy().flatten()
+        t_mask: np.ndarray = actions[2].detach().cpu().numpy().flatten()
 
         # Transform action_R by adding clipped noise and clipping as in TD3 algorithm
         action_R += np.random.normal(0, sd_noise, size=action_R.shape[0])
