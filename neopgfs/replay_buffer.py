@@ -7,14 +7,11 @@ from typing import Tuple, List
 
 # Expects tuples of (state, action_T, action_R, next_state, next_T_mask, reward, done)
 
-FloatArray = np.ndarray[np.float64]
-BoolArray = np.ndarray[np.bool_]
-
 BufferSample = Tuple[
-    FloatArray, FloatArray, FloatArray, FloatArray, BoolArray, float, bool
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, bool
 ]
 MinibatchSample = Tuple[
-    FloatArray, FloatArray, FloatArray, FloatArray, BoolArray, FloatArray, BoolArray,
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray,
 ]
 
 

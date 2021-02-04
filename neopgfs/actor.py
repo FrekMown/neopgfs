@@ -6,7 +6,7 @@ from typing import Tuple
 
 class Actor(nn.Module):
     def __init__(
-        self, state_dim: int, action_T_dim: int, action_R_dim: int,
+        self, state_dim: int, action_T_dim: int, action_R_dim: int, device: str,
     ):
         """Generates a new actor object containing two neural networks for function
         approximation: f(state) -> action_T and pi(state, action_T) -> action_R.
@@ -28,7 +28,7 @@ class Actor(nn.Module):
             nn.ReLU(),
             nn.Linear(128, action_T_dim),
             nn.Tanh(),
-        )
+        ).to(device)
 
         # Deterministic policy architecture pi(state, T_one_hot) -> action
         self.pi = nn.Sequential(
@@ -40,7 +40,7 @@ class Actor(nn.Module):
             nn.ReLU(),
             nn.Linear(167, action_R_dim),
             nn.Tanh(),
-        )
+        ).to(device)
 
     def forward(
         self, state: Tensor, T_mask: Tensor, gumbel_tau: float
@@ -63,6 +63,6 @@ class Actor(nn.Module):
         action_T = F.gumbel_softmax(T_raw * T_mask, gumbel_tau, hard=True)
 
         # Choose action_R using policy network
-        action_R: Tensor = self.pi(torch.cat([state, action_T]), axis=1)
+        action_R: Tensor = self.pi(torch.cat((state, action_T), dim=-1))
 
         return action_T, action_R, T_raw

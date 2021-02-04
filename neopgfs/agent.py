@@ -38,15 +38,13 @@ class Agent:
         self.device = device
 
         # Creation of actors
-        self.actor = Actor(state_dim, action_T_dim, action_R_dim).to(self.device)
-        self.actor_target = Actor(state_dim, action_T_dim, action_R_dim).to(self.device)
+        self.actor = Actor(state_dim, action_T_dim, action_R_dim, device)
+        self.actor_target = Actor(state_dim, action_T_dim, action_R_dim, device)
         self.actor_target.load_state_dict(self.actor.state_dict())
 
         # Creation of critic
-        self.critic = Critic(state_dim, action_T_dim, action_R_dim).to(self.device)
-        self.critic_target = Critic(state_dim, action_T_dim, action_R_dim).to(
-            self.device
-        )
+        self.critic = Critic(state_dim, action_T_dim, action_R_dim, device)
+        self.critic_target = Critic(state_dim, action_T_dim, action_R_dim, device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # Definition of optimizers

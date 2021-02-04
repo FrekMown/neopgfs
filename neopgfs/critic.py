@@ -4,7 +4,7 @@ import torch
 
 
 class Critic(nn.Module):
-    def __init__(self, state_dim: int, action_T_dim: int, action_R_dim: int):
+    def __init__(self, state_dim: int, action_T_dim: int, action_R_dim: int, device):
         """Creates a critic object holding two neural networks representing
         two versions of the Q-value function: Q(state, action_T, action_R) -> float
 
@@ -23,7 +23,7 @@ class Critic(nn.Module):
             nn.Linear(64, 16),
             nn.ReLU(),
             nn.Linear(16, 1),
-        )
+        ).to(device)
 
         self.Q2_model = nn.Sequential(
             nn.Linear(state_dim + action_T_dim + action_R_dim, 256),
@@ -33,7 +33,9 @@ class Critic(nn.Module):
             nn.Linear(64, 16),
             nn.ReLU(),
             nn.Linear(16, 1),
-        )
+        ).to(device)
+
+        self.device = device
 
     def forward(
         self, state: Tensor, action_T: Tensor, action_R: Tensor
@@ -50,7 +52,7 @@ class Critic(nn.Module):
             Tuple[Tensor, Tensor]: tuple of tensors holding q-value computed by
             each Q value function.
         """
-        state_actions = torch.cat([state, action_T, action_R], 1)
+        state_actions = torch.cat([state, action_T, action_R], 1).to(self.device)
         return self.Q1_model(state_actions), self.Q2_model(state_actions)
 
     def Q1(self, state: Tensor, action_T: Tensor, action_R: Tensor) -> Tensor:
